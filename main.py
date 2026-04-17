@@ -14,6 +14,9 @@ os.chdir(BASE_DIR)
 sys.path.insert(0, APP_DIR)
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "maxkb.settings")
 
+# Windows compatibility: patch os module before any code uses Unix-only functions
+from common.utils.windows_compat import *
+
 
 def collect_static():
     """

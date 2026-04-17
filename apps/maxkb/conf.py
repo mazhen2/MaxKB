@@ -38,7 +38,7 @@ class Config(dict):
         # 端口
         'REDIS_PORT': 6379,
         # 密码
-        'REDIS_PASSWORD': 'Password123@redis',
+        'REDIS_PASSWORD': '',
         # 库
         'REDIS_DB': 0,
         # 最大连接数
@@ -70,15 +70,19 @@ class Config(dict):
         }
 
     def get_cache_setting(self):
+        redis_options = {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            "CONNECTION_POOL_KWARGS": {"max_connections": int(self.get("REDIS_MAX_CONNECTIONS"))}
+        }
+        # Only add PASSWORD if it's not empty
+        if self.get("REDIS_PASSWORD"):
+            redis_options["PASSWORD"] = self.get("REDIS_PASSWORD")
+
         redis_config = {
             'default': {
                 'BACKEND': 'django_redis.cache.RedisCache',
                 'LOCATION': f'redis://{self.get("REDIS_HOST")}:{self.get("REDIS_PORT")}/{self.get("REDIS_DB")}',
-                'OPTIONS': {
-                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                    "PASSWORD": self.get("REDIS_PASSWORD"),
-                    "CONNECTION_POOL_KWARGS": {"max_connections": int(self.get("REDIS_MAX_CONNECTIONS"))}
-                },
+                'OPTIONS': redis_options,
             },
         }
         if self.get('REDIS_SENTINEL_SENTINELS') is not None:
