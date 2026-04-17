@@ -5,14 +5,23 @@ import getpass
 import gzip
 import json
 import os
-import pwd
 import random
-import resource
 import socket
 import subprocess
 import sys
 import tempfile
 import time
+
+# pwd and resource are Unix/Linux only
+try:
+    import pwd
+except ImportError:
+    pwd = None
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 from contextlib import contextmanager
 from contextlib import suppress
@@ -31,6 +40,9 @@ _sandbox_python_sys_path = CONFIG.get_sandbox_python_package_paths().split(',')
 _process_limit_timeout_seconds = int(CONFIG.get("SANDBOX_PYTHON_PROCESS_LIMIT_TIMEOUT_SECONDS", '3600'))
 _process_limit_cpu_cores = min(max(int(CONFIG.get("SANDBOX_PYTHON_PROCESS_LIMIT_CPU_CORES", '1')), 1), len(os.sched_getaffinity(0))) if sys.platform.startswith("linux") else os.cpu_count()  # 只支持linux，window和mac不支持
 _process_limit_mem_mb = int(CONFIG.get("SANDBOX_PYTHON_PROCESS_LIMIT_MEM_MB", '256'))
+
+# Check if sandbox is actually supported on this platform
+_sandbox_supported = _enable_sandbox and pwd is not None and resource is not None
 
 class ToolExecutor:
 
@@ -89,7 +101,7 @@ class ToolExecutor:
     def exec_code(self, code_str, keywords, function_name=None):
         _id = str(uuid.uuid7())
         action_function = f'({function_name !a}, locals_v.get({function_name !a}))' if function_name else 'locals_v.popitem()'
-        set_run_user = f'os.setgid({pwd.getpwnam(_run_user).pw_gid});os.setuid({pwd.getpwnam(_run_user).pw_uid});' if _enable_sandbox else ''
+        set_run_user = f'os.setgid({pwd.getpwnam(_run_user).pw_gid});os.setuid({pwd.getpwnam(_run_user).pw_uid});' if _sandbox_supported else ''
         _exec_code = f"""
 try:
     import os, sys, json
@@ -265,7 +277,7 @@ sys.stdout.flush()
 
     def generate_mcp_server_code(self, code_str, params, name, description, tool_id):
         code = self._generate_mcp_server_code(code_str, params, name, description, tool_id)
-        set_run_user = f'os.setgid({pwd.getpwnam(_run_user).pw_gid});os.setuid({pwd.getpwnam(_run_user).pw_uid});' if _enable_sandbox else ''
+        set_run_user = f'os.setgid({pwd.getpwnam(_run_user).pw_gid});os.setuid({pwd.getpwnam(_run_user).pw_uid});' if _sandbox_supported else ''
         return f"""
 import os, sys, logging
 logging.basicConfig(level=logging.WARNING)
@@ -313,7 +325,7 @@ exec({dedent(code)!a})
             '_ID': _id,
         }}
         def _set_resource_limit():
-            if not _enable_sandbox or not sys.platform.startswith("linux"): return
+            if not _sandbox_supported or not sys.platform.startswith("linux"): return
             with suppress(Exception): resource.setrlimit(resource.RLIMIT_AS, (_process_limit_mem_mb * 1024 * 1024,) * 2)
             with suppress(Exception): os.sched_setaffinity(0, set(random.sample(list(os.sched_getaffinity(0)), _process_limit_cpu_cores)))
         try:

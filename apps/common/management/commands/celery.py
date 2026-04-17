@@ -30,8 +30,9 @@ class Command(BaseCommand):
             os.environ.setdefault('C_FORCE_ROOT', '1')
         if not server_hostname:
             server_hostname = '%h'
+        import sys
         cmd = [
-            'celery',
+            sys.executable, '-m', 'celery',
             '-A', 'ops',
             'worker',
             '-P', 'threads',
