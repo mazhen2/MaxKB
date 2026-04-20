@@ -1,6 +1,7 @@
 # coding=utf-8
 import base64
 import time
+import requests
 from functools import reduce
 from imghdr import what
 from typing import List, Dict
@@ -269,10 +270,15 @@ class BaseImageUnderstandNode(IImageUnderstandNode):
         """
         images = []
         if isinstance(image, str) and image.startswith('http'):
-            images.append({'type': 'image_url', 'image_url': {'url': image}})
+            resp = requests.get(image, timeout=15)
+            resp.raise_for_status()
+            image_bytes = resp.content
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            image_format = what(None, image_bytes) or 'png'
+            images.append({'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
         elif image is not None and len(image) > 0:
             for img in image:
-                if 'file_id' in img:
+                if img.get('file_id'):
                     file_id = img['file_id']
                     file = QuerySet(File).filter(id=file_id).first()
                     image_bytes = file.get_bytes()
@@ -281,8 +287,13 @@ class BaseImageUnderstandNode(IImageUnderstandNode):
                     images.append(
                         {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
                 elif 'url' in img and img['url'].startswith('http'):
+                    resp = requests.get(img['url'], timeout=15)
+                    resp.raise_for_status()
+                    image_bytes = resp.content
+                    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+                    image_format = what(None, image_bytes) or 'png'
                     images.append(
-                        {'type': 'image_url', 'image_url': {'url': img["url"]}})
+                        {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
         return images
 
     def generate_message_list(self, image_model, system: str, prompt: str, history_message, image):

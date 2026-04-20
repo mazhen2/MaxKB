@@ -222,11 +222,10 @@ class CustomEdgeModel2 extends BezierEdgeModel {
       }
 
       this.updateEndPoint(endPoint)
+      // 这里需要将原有的pointsList设置为空，才能触发bezier的自动计算control点。
+      this.pointsList = []
+      this.initPoints()
     }
-
-    // 这里需要将原有的pointsList设置为空，才能触发bezier的自动计算control点。
-    this.pointsList = []
-    this.initPoints()
   }
   setAttributes(): void {
     super.setAttributes()

@@ -330,7 +330,7 @@ function uuidv4() {
 }
 
 const newDefaultSlogan = computed(() => {
-  const default_login = '强大易用的企业级智能体平台'
+  const default_login = ''
   if (!theme.themeInfo?.slogan || default_login == theme.themeInfo?.slogan) {
     return t('theme.defaultSlogan')
   } else {

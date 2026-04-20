@@ -4,7 +4,7 @@ const ModelRouter = {
   name: 'tool',
   meta: {
     title: 'views.tool.title',
-    menu: true,
+    // menu: true,
     permission: [
       RoleConst.USER.getWorkspaceRole,
       RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,

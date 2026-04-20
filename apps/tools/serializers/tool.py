@@ -571,6 +571,8 @@ class ToolSerializer(serializers.Serializer):
                 if get_authorized_tool:
                     if not get_authorized_tool(QuerySet(Tool).filter(id=self.data.get('id')), workspace_id).exists():
                         raise AppApiException(500, _('Tool id does not exist'))
+                elif not QuerySet(Tool).filter(id=self.data.get('id')).exists():
+                    raise AppApiException(500, _('Tool id does not exist'))
 
         def is_valid(self, *, raise_exception=False):
             super().is_valid(raise_exception=True)
@@ -660,7 +662,9 @@ class ToolSerializer(serializers.Serializer):
         def one(self):
             self.is_one_valid(raise_exception=True)
             tool = QuerySet(Tool).filter(id=self.data.get('id')).select_related('user').first()
-            nick_name = tool.user.nick_name if tool and tool.user else None
+            if tool is None:
+                raise AppApiException(500, _('Tool id does not exist'))
+            nick_name = tool.user.nick_name if tool.user else None
             if tool.init_params:
                 tool.init_params = json.loads(rsa_long_decrypt(tool.init_params))
             if tool.init_field_list:

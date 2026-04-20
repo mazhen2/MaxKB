@@ -1,8 +1,8 @@
-# MaxKB 项目说明
+# GCode 项目说明
 
 ## 项目概述
 
-**MaxKB = Max Knowledge Brain** 是一个开源的企业级 AI 知识库问答平台，基于 RAG (Retrieval-Augmented Generation) 技术，支持工作流编排和 MCP (Model Context Protocol) 工具调用。
+**GCode = GCode** 是一个开源的企业级 AI 知识库问答平台，基于 RAG (Retrieval-Augmented Generation) 技术，支持工作流编排和 MCP (Model Context Protocol) 工具调用。
 
 **版本**: 2.0.0
 **前端**: Vue.js
@@ -20,7 +20,7 @@
 | **后端 Python** | Python | **3.11+** |
 | **前端 Node.js** | Node.js | **22.x** |
 | **前端框架** | Vue.js | **3.5.13** |
-| **项目版本** | MaxKB | **2.0.0** |
+| **项目版本** | GCode | **2.0.0** |
 
 ---
 
@@ -418,7 +418,7 @@ installer/
 ## 版本对应关系
 
 ```
-MaxKB 2.0.0
+GCode 2.0.0
 ├── Python 3.11+
 ├── Django 5.2.13
 ├── Vue 3.5.13

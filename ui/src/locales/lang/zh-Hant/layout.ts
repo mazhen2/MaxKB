@@ -40,5 +40,5 @@ export default {
   },
   copyright: '版權所有 © 2014-2026 杭州飛致雲信息科技有限公司',
   userManualUrl: 'https://maxkb.cn/docs/v2/',
-  forumUrl: 'https://github.com/1Panel-dev/MaxKB/discussions',
+  forumUrl: 'https://github.com/1Panel-dev/GCode/discussions',
 }

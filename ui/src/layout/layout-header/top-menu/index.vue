@@ -1,5 +1,5 @@
 <template>
-  <div class="top-menu-container flex align-center h-full">
+  <div class="top-menu-container flex align-center h-full justify-center">
     <MenuItem
       :menu="menu"
       v-hasPermission="menu.meta?.permission"
@@ -29,4 +29,8 @@ const topMenuList = computed(() => {
   return menu
 })
 </script>
-<style lang="scss" scope></style>
+<style lang="scss" scoped>
+.top-menu-container {
+  gap: 8px;
+}
+</style>

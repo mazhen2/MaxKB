@@ -98,11 +98,27 @@ class ToolExecutor:
     except Exception as e:
         maxkb_logger.error(f'Exception: {e}', exc_info=True)
 
+    def _exec_in_process(self, code_str, keywords, function_name=None):
+        """Windows 下进程内执行（无沙箱，仅用于开发环境）"""
+        _id = str(uuid.uuid7())
+        with execution_timer(_id):
+            locals_v = {}
+            globals_v = {}
+            exec(dedent(code_str), globals_v, locals_v)
+            if function_name:
+                f = locals_v.get(function_name)
+            else:
+                _, f = locals_v.popitem()
+            globals_v.update(locals_v)
+            return f(**keywords)
+
     def exec_code(self, code_str, keywords, function_name=None):
+        if sys.platform == 'win32':
+            return self._exec_in_process(code_str, keywords, function_name)
         _id = str(uuid.uuid7())
         action_function = f'({function_name !a}, locals_v.get({function_name !a}))' if function_name else 'locals_v.popitem()'
         set_run_user = f'os.setgid({pwd.getpwnam(_run_user).pw_gid});os.setuid({pwd.getpwnam(_run_user).pw_uid});' if _sandbox_supported else ''
-        _exec_code = f"""
+        _exec_code = f"""# -*- coding: utf-8 -*-
 try:
     import os, sys, json
     from contextlib import redirect_stdout
@@ -130,11 +146,15 @@ sys.stdout.write("\\n" + _id + "__END__\\n")
 sys.stdout.flush()
 """
         maxkb_logger.debug(f"Tool execution({_id}) execute code: {_exec_code}")
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=True) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(_exec_code)
-            f.flush()
+            tmp_path = f.name
+        try:
             with execution_timer(_id):
-                subprocess_result = self._exec(f.name, _id)
+                subprocess_result = self._exec(tmp_path, _id)
+        finally:
+            with suppress(Exception):
+                os.unlink(tmp_path)
         if subprocess_result.returncode != 0:
             raise Exception(subprocess_result.stderr or subprocess_result.stdout or "Unknown exception occurred")
         lines = subprocess_result.stdout.splitlines()
@@ -329,13 +349,14 @@ exec({dedent(code)!a})
             with suppress(Exception): resource.setrlimit(resource.RLIMIT_AS, (_process_limit_mem_mb * 1024 * 1024,) * 2)
             with suppress(Exception): os.sched_setaffinity(0, set(random.sample(list(os.sched_getaffinity(0)), _process_limit_cpu_cores)))
         try:
+            extra = {} if sys.platform == 'win32' else {'preexec_fn': _set_resource_limit}
             subprocess_result = subprocess.run(
                 [sys.executable, execute_file],
                 timeout=_process_limit_timeout_seconds,
                 text=True,
                 capture_output=True,
                 **kwargs,
-                preexec_fn=_set_resource_limit
+                **extra
             )
             return subprocess_result
         except subprocess.TimeoutExpired:

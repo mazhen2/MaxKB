@@ -57,33 +57,59 @@ class KnowledgeDatasourceView(APIView):
             data={'type': type, 'id': id, 'params': request.data, 'function_name': function_name}).action())
 
 
+# ... existing code ...
 class KnowledgeWorkflowUploadDocumentView(APIView):
+    # 设置认证方式为Token认证
     authentication_classes = [TokenAuth]
 
+    # 使用drf-spectacular装饰器，用于生成OpenAPI文档
     @extend_schema(
-        methods=['GET'],
-        description=_('Knowledge workflow upload document'),
-        summary=_('Knowledge workflow upload document'),
-        operation_id=_('Knowledge workflow upload document'),  # type: ignore
-        parameters=KnowledgeWorkflowActionApi.get_parameters(),
-        request=KnowledgeWorkflowActionApi.get_request(),
-        responses=KnowledgeWorkflowActionApi.get_response(),
-        tags=[_('Knowledge Base')]  # type: ignore
+        methods=['POST'],  # 注意：这里标记为GET但实际方法是POST，可能存在不一致
+        description=_('Knowledge workflow upload document'),  # 接口描述
+        summary=_('Knowledge workflow upload document'),  # 接口摘要
+        operation_id=_('Knowledge workflow upload document'),  # 操作ID，用于API文档
+        parameters=KnowledgeWorkflowActionApi.get_parameters(),  # 获取接口参数定义
+        request=KnowledgeWorkflowActionApi.get_request(),  # 获取请求体定义
+        responses=KnowledgeWorkflowActionApi.get_response(),  # 获取响应定义
+        tags=[_('Knowledge Base')]  # API标签，用于文档分类
     )
+    # 权限装饰器：配置多重权限校验规则
     @has_permissions(
+        # 知识库文档创建的工作空间知识库权限
         PermissionConstants.KNOWLEDGE_DOCUMENT_CREATE.get_workspace_knowledge_permission(),
+        # 知识库文档创建的工作空间管理角色权限
         PermissionConstants.KNOWLEDGE_DOCUMENT_CREATE.get_workspace_permission_workspace_manage_role(),
+        # 工作空间管理员角色
         RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+        # 自定义视图权限：用户角色 AND 知识库权限的组合校验
         ViewPermission(
-            [RoleConstants.USER.get_workspace_role()],
-            [PermissionConstants.KNOWLEDGE.get_workspace_knowledge_permission()],
-            CompareConstants.AND
+            [RoleConstants.USER.get_workspace_role()],  # 用户角色列表
+            [PermissionConstants.KNOWLEDGE.get_workspace_knowledge_permission()],  # 知识库权限列表
+            CompareConstants.AND  # 使用AND逻辑，需同时满足
         ),
     )
     def post(self, request: Request, workspace_id: str, knowledge_id: str):
+        """
+        处理文档上传的POST请求
+
+        Args:
+            request: HTTP请求对象，包含上传的文件数据
+            workspace_id: 工作空间ID
+            knowledge_id: 知识库ID
+
+        Returns:
+            返回统一的成功响应结果
+        """
+        # 实例化序列化器，传入工作空间和知识库ID
+        # 调用upload_document方法处理文档上传逻辑
+        # request.data包含上传的文件数据
+        # request.user为当前登录用户
+        # True参数可能表示是工作流模式上传
         return result.success(KnowledgeWorkflowActionSerializer(
             data={'workspace_id': workspace_id, 'knowledge_id': knowledge_id}).upload_document(request.data,
                                                                                                request.user, True))
+# ... existing code ...
+
 
 
 class KnowledgeWorkflowActionView(APIView):

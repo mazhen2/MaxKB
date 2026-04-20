@@ -5,7 +5,7 @@
       <LogoFull />
     </div>
 
-    <div class="flex-between w-full">
+    <div class="header-content w-full flex align-center">
       <div class="ml-24 flex align-center w-120">
         <!-- 企业版: 工作空间下拉框-->
         <el-divider
@@ -21,7 +21,6 @@
         />
       </div>
       <TopMenu></TopMenu>
-      <TopAbout class="mr-12"></TopAbout>
     </div>
     <Avatar></Avatar>
   </div>
@@ -31,7 +30,6 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TopMenu from './top-menu/index.vue'
 import Avatar from './avatar/index.vue'
-import TopAbout from './top-about/index.vue'
 import { EditionConst } from '@/utils/permission/data'
 import { hasPermission } from '@/utils/permission/index'
 import type { WorkspaceItem } from '@/api/type/workspace'
@@ -64,5 +62,28 @@ function changeWorkspace(item: WorkspaceItem) {
   height: var(--app-header-height);
   box-sizing: border-box;
   padding: var(--app-header-padding);
+}
+.header-content {
+  position: relative;
+  justify-content: space-between;
+  height: var(--app-header-height);
+}
+.header-content > :first-child {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.header-content > :last-child {
+  flex: 1;
+  min-width: 0;
+}
+.header-content :deep(.top-menu-container) {
+  flex: 0 0 auto;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 100%;
 }
 </style>

@@ -205,6 +205,8 @@ export class WorkFlowInstance {
    * @param node 节点
    */
   is_valid_node(node: any) {
+    console.log('@@@@@校验节点@@@@@@'+node.properties)
+    debugger
     if (node.properties.status && node.properties.status === 500) {
       throw `${node.properties.stepName} ${t('workflow.validate.nodeUnavailable')}`
     }

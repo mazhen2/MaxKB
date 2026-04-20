@@ -243,7 +243,9 @@ class KnowledgeWorkflowSerializer(serializers.Serializer):
                 return node.__getattribute__(node, self.data.get("function_name"))(**self.data.get("params"))
             elif self.data.get('type') == 'tool':
                 tool = QuerySet(Tool).filter(id=self.data.get("id")).first()
-                init_params = json.loads(rsa_long_decrypt(tool.init_params))
+                if tool is None:
+                    raise AppApiException(500, _('Tool id does not exist'))
+                init_params = json.loads(rsa_long_decrypt(tool.init_params)) if tool.init_params else {}
                 return tool_executor.exec_code(tool.code, {**init_params, **self.data.get('params')},
                                                self.data.get('function_name'))
 

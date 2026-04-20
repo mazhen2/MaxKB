@@ -35,7 +35,15 @@ const isActive = computed(() => {
   cursor: pointer;
   font-size: 14px;
   position: relative;
-  padding: 6px 12px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+
+  .title {
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
 
   .icon {
     font-size: 15px;

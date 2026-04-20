@@ -19,8 +19,8 @@ body:
     validations:
       required: true
     attributes:
-      label: "MaxKB Version"
-      description: "Log in to the MaxKB Web Console and check the current version on the `About` page in the top right corner."
+      label: "GCode Version"
+      description: "Log in to the GCode Web Console and check the current version on the `About` page in the top right corner."
   - type: markdown
     attributes:
       value: "## Detailed information"
