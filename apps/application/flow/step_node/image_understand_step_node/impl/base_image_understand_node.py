@@ -264,18 +264,40 @@ class BaseImageUnderstandNode(IImageUnderstandNode):
     def generate_prompt_question(self, prompt):
         return HumanMessage(self.workflow_manage.generate_prompt(prompt))
 
+    @staticmethod
+    def _fetch_image_as_base64(url: str):
+        """下载 URL 图片，返回 (base64字符串, 格式) 或 None（不支持的格式或下载失败则跳过）"""
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        content_type = resp.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        image_bytes = resp.content
+        # SVG 及非图片格式跳过（视觉模型不支持）
+        if 'svg' in content_type or image_bytes.lstrip()[:5] in (b'<svg ', b'<?xml'):
+            return None
+        # 优先用响应头格式，回退到 imghdr
+        if content_type.startswith('image/'):
+            image_format = content_type[len('image/'):]
+        else:
+            image_format = what(None, image_bytes) or 'png'
+        # 再次过滤 svg
+        if image_format == 'svg+xml' or image_format == 'svg':
+            return None
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        return base64_image, image_format
+
     def _process_images(self, image):
         """
         处理图像数据，转换为模型可识别的格式
         """
         images = []
         if isinstance(image, str) and image.startswith('http'):
-            resp = requests.get(image, timeout=15)
-            resp.raise_for_status()
-            image_bytes = resp.content
-            base64_image = base64.b64encode(image_bytes).decode("utf-8")
-            image_format = what(None, image_bytes) or 'png'
-            images.append({'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
+            result = self._fetch_image_as_base64(image)
+            if result:
+                base64_image, image_format = result
+                images.append({'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
         elif image is not None and len(image) > 0:
             for img in image:
                 if img.get('file_id'):
@@ -283,17 +305,15 @@ class BaseImageUnderstandNode(IImageUnderstandNode):
                     file = QuerySet(File).filter(id=file_id).first()
                     image_bytes = file.get_bytes()
                     base64_image = base64.b64encode(image_bytes).decode("utf-8")
-                    image_format = what(None, image_bytes)
-                    images.append(
-                        {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
-                elif 'url' in img and img['url'].startswith('http'):
-                    resp = requests.get(img['url'], timeout=15)
-                    resp.raise_for_status()
-                    image_bytes = resp.content
-                    base64_image = base64.b64encode(image_bytes).decode("utf-8")
                     image_format = what(None, image_bytes) or 'png'
                     images.append(
                         {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
+                elif 'url' in img and img['url'].startswith('http'):
+                    result = self._fetch_image_as_base64(img['url'])
+                    if result:
+                        base64_image, image_format = result
+                        images.append(
+                            {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
         return images
 
     def generate_message_list(self, image_model, system: str, prompt: str, history_message, image):
