@@ -21,7 +21,7 @@ from application.serializers.application_chat import ApplicationChatQuerySeriali
 from chat.api.chat_api import ChatAPI, PromptGenerateAPI
 from chat.api.chat_authentication_api import ChatOpenAPI
 from chat.serializers.chat import OpenChatSerializers, ChatSerializers, DebugChatSerializers, PromptGenerateSerializer
-from common.auth import TokenAuth
+from common.auth import TokenAuth, AllTokenAuth
 from common.auth.authentication import has_permissions
 from common.constants.permission_constants import PermissionConstants, RoleConstants, ViewPermission, CompareConstants
 from common.log.log import log
@@ -139,7 +139,7 @@ class OpenView(APIView):
 
 
 class ChatView(APIView):
-    authentication_classes = [TokenAuth]
+    authentication_classes = [AllTokenAuth]
 
     @extend_schema(
         methods=['POST'],

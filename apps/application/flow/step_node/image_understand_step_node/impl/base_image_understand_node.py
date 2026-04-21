@@ -1,7 +1,9 @@
 # coding=utf-8
 import base64
+import io
 import time
 import requests
+from PIL import Image
 from functools import reduce
 from imghdr import what
 from typing import List, Dict
@@ -14,6 +16,75 @@ from application.flow.step_node.image_understand_step_node.i_image_understand_no
 from application.flow.tools import Reasoning
 from knowledge.models import File
 from models_provider.tools import get_model_instance_by_model_workspace_id
+
+
+def _resize_image(image_bytes: bytes, max_size: int = 768) -> bytes:
+    """
+    将图片缩放到 max_size 以内，减少视觉模型推理压力。
+    始终通过 PIL 重新编码，确保输出是合法的图片数据。
+    如果无法解析则返回 None。
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img.load()
+    except Exception:
+        return None
+
+    try:
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+
+        if img.width > max_size or img.height > max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _extract_gif_frames(image_bytes: bytes, max_frames: int = 4, max_size: int = 768):
+    """
+    从 GIF 动画中均匀采样关键帧，每帧转为 PNG bytes。
+    返回 List[bytes]（多帧 PNG），或 None（非动画 GIF / 解析失败）。
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        return None
+
+    if not getattr(img, 'is_animated', False) or img.n_frames <= 1:
+        return None
+
+    total = img.n_frames
+    count = min(total, max_frames)
+    # 均匀采样帧索引，包含首尾帧
+    if count == 1:
+        indices = [0]
+    else:
+        indices = [round(i * (total - 1) / (count - 1)) for i in range(count)]
+
+    frames = []
+    for idx in indices:
+        try:
+            img.seek(idx)
+            frame = img.copy()
+            if frame.mode in ('RGBA', 'LA', 'P'):
+                frame = frame.convert('RGB')
+            elif frame.mode != 'RGB':
+                frame = frame.convert('RGB')
+
+            if frame.width > max_size or frame.height > max_size:
+                frame.thumbnail((max_size, max_size), Image.LANCZOS)
+
+            buf = io.BytesIO()
+            frame.save(buf, format='PNG')
+            frames.append(buf.getvalue())
+        except Exception:
+            continue
+
+    return frames if frames else None
 
 
 def _write_context(node_variable: Dict, workflow_variable: Dict, node: INode, workflow, answer: str,
@@ -119,10 +190,35 @@ def write_context(node_variable: Dict, workflow_variable: Dict, node: INode, wor
 
 
 def file_id_to_base64(file_id: str):
-    file = QuerySet(File).filter(id=file_id).first()
-    file_bytes = file.get_bytes()
-    base64_image = base64.b64encode(file_bytes).decode("utf-8")
-    return [base64_image, what(None, file_bytes)]
+    """
+    将文件转换为 Base64 编码和图片格式。
+    GIF 动画返回: [[base64_frame1, ...], 'gif_frames']
+    静态图片返回: [base64_string, 'png']
+    失败返回: None
+    """
+    try:
+        file = QuerySet(File).filter(id=file_id).first()
+        if not file:
+            return None
+        file_bytes = file.get_bytes()
+        if not file_bytes:
+            return None
+
+        # GIF 动画：提取多帧
+        frames = _extract_gif_frames(file_bytes)
+        if frames:
+            return [[base64.b64encode(f).decode("utf-8") for f in frames], 'gif_frames']
+
+        # 静态图片：通过 PIL 验证和重编码
+        image_bytes = _resize_image(file_bytes)
+        if image_bytes is None:
+            return None
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        return [base64_image, 'png']
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to convert file {file_id} to base64: {str(e)}")
+        return None
 
 
 class BaseImageUnderstandNode(IImageUnderstandNode):
@@ -249,71 +345,198 @@ class BaseImageUnderstandNode(IImageUnderstandNode):
                         file_id_list.append(image.get('file_id'))
                     elif 'url' in image:
                         url_list.append(image.get('url'))
-                image_base64_list = [file_id_to_base64(file_id) for file_id in file_id_list]
+
+                # 转换文件 ID 为 Base64，过滤掉失败的项
+                image_base64_list = [
+                    file_id_to_base64(file_id) for file_id in file_id_list
+                ]
+                image_base64_list = [img for img in image_base64_list if img is not None]
+
+                # 构建 image_url 列表，支持 GIF 多帧
+                image_url_items = []
+                for base64_image in image_base64_list:
+                    if not base64_image or len(base64_image) < 2 or not base64_image[1]:
+                        continue
+                    if base64_image[1] == 'gif_frames' and isinstance(base64_image[0], list):
+                        for frame_b64 in base64_image[0]:
+                            image_url_items.append({'type': 'image_url',
+                                                    'image_url': {'url': f'data:image/png;base64,{frame_b64}'}})
+                    else:
+                        image_url_items.append({'type': 'image_url',
+                                                'image_url': {'url': f'data:image/{base64_image[1]};base64,{base64_image[0]}'}})
 
                 return HumanMessage(
                     content=[
                         {'type': 'text', 'text': data['question']},
-                        *[{'type': 'image_url',
-                           'image_url': {'url': f'data:image/{base64_image[1]};base64,{base64_image[0]}'}} for
-                          base64_image in image_base64_list],
-                        *[{'type': 'image_url', 'image_url': url} for url in url_list]
+                        *image_url_items,
+                        *[{'type': 'image_url', 'image_url': {'url': url}} for url in url_list]
                     ])
         return HumanMessage(content=chat_record.problem_text)
 
     def generate_prompt_question(self, prompt):
         return HumanMessage(self.workflow_manage.generate_prompt(prompt))
 
+    # 视频/非图片扩展名，在下载前直接跳过
+    _SKIP_EXTENSIONS = {
+        'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v',  # 视频
+        'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a',                 # 音频
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar',  # 文档
+    }
+
     @staticmethod
     def _fetch_image_as_base64(url: str):
-        """下载 URL 图片，返回 (base64字符串, 格式) 或 None（不支持的格式或下载失败则跳过）"""
+        """
+        下载 URL 图片，返回 (base64字符串, 格式) 或 None（不支持的格式或下载失败则跳过）
+        支持的格式: jpeg, jpg, png, gif, webp
+        自动跳过视频、音频、文档等非图片 URL
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 支持的图片格式
+        supported_formats = {'jpeg', 'jpg', 'png', 'gif', 'webp'}
+
+        # 第一步：从 URL 扩展名判断，跳过视频/音频/文档
+        url_path = url.split('?')[0].split('#')[0]  # 去掉查询参数
+        ext = url_path.rsplit('.', 1)[-1].lower() if '.' in url_path else ''
+        if ext in BaseImageUnderstandNode._SKIP_EXTENSIONS:
+            logger.info(f"Skipping non-image URL (extension: .{ext}): {url}")
+            return None
+
         try:
             resp = requests.get(url, timeout=10)
             resp.raise_for_status()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to fetch image from {url}: {str(e)}")
             return None
+
         content_type = resp.headers.get('Content-Type', '').split(';')[0].strip().lower()
         image_bytes = resp.content
-        # SVG 及非图片格式跳过（视觉模型不支持）
-        if 'svg' in content_type or image_bytes.lstrip()[:5] in (b'<svg ', b'<?xml'):
+
+        # 第二步：根据 Content-Type 跳过非图片资源
+        if content_type and not content_type.startswith('image/') and content_type != 'application/octet-stream':
+            logger.info(f"Skipping non-image content (Content-Type: {content_type}): {url}")
             return None
+
+        # SVG 格式跳过（视觉模型不支持）
+        if 'svg' in content_type or image_bytes.lstrip()[:5] in (b'<svg ', b'<?xml'):
+            logger.warning(f"SVG format not supported: {url}")
+            return None
+
         # 优先用响应头格式，回退到 imghdr
         if content_type.startswith('image/'):
             image_format = content_type[len('image/'):]
         else:
-            image_format = what(None, image_bytes) or 'png'
-        # 再次过滤 svg
-        if image_format == 'svg+xml' or image_format == 'svg':
+            image_format = what(None, image_bytes)
+
+        # 验证格式
+        if not image_format:
+            logger.warning(f"Unable to detect image format, fallback to png: {url}")
+            image_format = 'png'
+
+        # 过滤 svg
+        if image_format in ('svg+xml', 'svg'):
             return None
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        return base64_image, image_format
+
+        # 验证格式是否支持
+        if image_format not in supported_formats:
+            logger.warning(f"Unsupported image format '{image_format}' from {url}")
+            return None
+
+        try:
+            # GIF 动画：提取多帧
+            if image_format == 'gif':
+                frames = _extract_gif_frames(image_bytes)
+                if frames:
+                    return [base64.b64encode(f).decode("utf-8") for f in frames], 'gif_frames'
+                # 非动画 GIF，走静态处理
+
+            image_bytes = _resize_image(image_bytes)
+            if image_bytes is None:
+                logger.warning(f"Image data invalid or corrupted: {url}")
+                return None
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            return base64_image, 'png'
+        except Exception as e:
+            logger.error(f"Error processing image from {url}: {str(e)}")
+            return None
 
     def _process_images(self, image):
         """
         处理图像数据，转换为模型可识别的格式
+        支持的格式: jpeg, png, gif, webp
+        自动跳过视频、音频等非图片资源
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         images = []
+        # 支持的图片格式（OpenAI Vision API 支持）
+        supported_formats = {'jpeg', 'jpg', 'png', 'gif', 'webp'}
+
+        def _append_fetch_result(result):
+            """将 _fetch_image_as_base64 的返回值追加到 images 列表"""
+            if not result:
+                return
+            base64_data, fmt = result
+            if fmt == 'gif_frames' and isinstance(base64_data, list):
+                for frame_b64 in base64_data:
+                    images.append({'type': 'image_url',
+                                   'image_url': {'url': f'data:image/png;base64,{frame_b64}'}})
+            else:
+                images.append({'type': 'image_url',
+                               'image_url': {'url': f'data:image/png;base64,{base64_data}'}})
+
         if isinstance(image, str) and image.startswith('http'):
-            result = self._fetch_image_as_base64(image)
-            if result:
-                base64_image, image_format = result
-                images.append({'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
+            _append_fetch_result(self._fetch_image_as_base64(image))
+
         elif image is not None and len(image) > 0:
             for img in image:
-                if img.get('file_id'):
-                    file_id = img['file_id']
-                    file = QuerySet(File).filter(id=file_id).first()
-                    image_bytes = file.get_bytes()
-                    base64_image = base64.b64encode(image_bytes).decode("utf-8")
-                    image_format = what(None, image_bytes) or 'png'
-                    images.append(
-                        {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
-                elif 'url' in img and img['url'].startswith('http'):
-                    result = self._fetch_image_as_base64(img['url'])
-                    if result:
-                        base64_image, image_format = result
+                try:
+                    if img.get('file_id'):
+                        file_id = img['file_id']
+                        file = QuerySet(File).filter(id=file_id).first()
+                        if not file:
+                            logger.warning(f"File not found: {file_id}")
+                            continue
+
+                        # 从文件名检查是否为非图片文件（视频/音频等），提前跳过
+                        filename = getattr(file, 'file_name', '') or ''
+                        if filename:
+                            file_ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                            if file_ext in self._SKIP_EXTENSIONS:
+                                logger.info(f"Skipping non-image file (extension: .{file_ext}): {filename}")
+                                continue
+
+                        raw_bytes = file.get_bytes()
+
+                        # GIF 动画：提取多帧
+                        if filename.lower().endswith('.gif'):
+                            frames = _extract_gif_frames(raw_bytes)
+                            if frames:
+                                for f in frames:
+                                    b64 = base64.b64encode(f).decode("utf-8")
+                                    images.append({'type': 'image_url',
+                                                   'image_url': {'url': f'data:image/png;base64,{b64}'}})
+                                continue
+
+                        # 静态图片
+                        image_bytes = _resize_image(raw_bytes)
+                        if image_bytes is None:
+                            logger.warning(f"Image data invalid or corrupted for file: {file_id}")
+                            continue
+
+                        base64_image = base64.b64encode(image_bytes).decode("utf-8")
                         images.append(
-                            {'type': 'image_url', 'image_url': {'url': f'data:image/{image_format};base64,{base64_image}'}})
+                            {'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{base64_image}'}})
+
+                    elif 'url' in img and img['url'].startswith('http'):
+                        _append_fetch_result(self._fetch_image_as_base64(img['url']))
+
+                except Exception as e:
+                    logger.error(f"Error processing image {img}: {str(e)}")
+                    continue
+
         return images
 
     def generate_message_list(self, image_model, system: str, prompt: str, history_message, image):

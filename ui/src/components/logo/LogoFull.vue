@@ -43,7 +43,7 @@ const fileURL = computed(() => {
 
   span {
     font-family: 'Arial Rounded MT Bold', 'Rounded Mplus 1p Bold', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    font-size: 36px;
+    font-size: 28px;
     font-weight: 800;
     letter-spacing: -1px;
     border-radius: 8px;

@@ -20,6 +20,7 @@ const components: any = import.meta.glob('@/views/chat/**/index.vue', {
 })
 
 const {
+  params: { accessToken: routeAccessToken },
   query: { mode },
 } = route as any
 
@@ -35,12 +36,43 @@ const currentTemplate = computed(() => {
     modeName = 'no-service'
   }
 
-  const name = `/src/views/chat/${modeName}/index.vue`
-  return components[name].default
+  return components[`/src/views/chat/${modeName}/index.vue`].default
 })
 
 const applicationAvailable = ref<boolean>(true)
-onBeforeMount(() => {
+onBeforeMount(async () => {
   locale.value = chatUser.getLanguage()
+  if (routeAccessToken) {
+    chatUser.setAccessToken(routeAccessToken as string)
+  }
+
+  if (!chatUser.application) {
+    let authentication = false
+    try {
+      authentication = await chatUser.isAuthentication()
+    } catch (e: any) {
+      try {
+        await chatUser.anonymousAuthentication()
+      } catch (e2: any) {
+        // ignore
+      }
+    }
+
+    if (!authentication) {
+      try {
+        await chatUser.anonymousAuthentication()
+      } catch (e: any) {
+        // ignore
+      }
+    }
+
+    if (!chatUser.application) {
+      try {
+        await chatUser.applicationProfile()
+      } catch (e: any) {
+        // ignore
+      }
+    }
+  }
 })
 </script>

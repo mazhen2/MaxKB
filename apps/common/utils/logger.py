@@ -10,9 +10,18 @@ class DailyTimedRotatingFileHandler(TimedRotatingFileHandler):
     def rotator(self, source, dest):
         """ Override the original method to rotate the log file daily."""
         dest = self._get_rotate_dest_filename(source)
-        if os.path.exists(source) and not os.path.exists(dest):
-            # 存在多个服务进程时, 保证只有一个进程成功 rotate
-            os.rename(source, dest)
+        if os.path.exists(source):
+            # Skip if another process already rotated (file gone or dest exists)
+            if os.path.exists(dest):
+                return
+            try:
+                os.rename(source, dest)
+            except PermissionError:
+                # On Windows, another process may still hold a handle after rename
+                # by this process. Re-check: if dest exists, rotation succeeded.
+                if os.path.exists(dest):
+                    return
+                raise
 
     @staticmethod
     def _get_rotate_dest_filename(source):

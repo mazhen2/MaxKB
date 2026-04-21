@@ -8,7 +8,7 @@ import useStore from '@/stores'
 import { ref, type WritableComputedRef } from 'vue'
 
 const axiosConfig = {
-  baseURL: (window.MaxKB?.prefix ? window.MaxKB?.prefix : '/chat') + '/api',
+  baseURL: (window.MaxKB?.chatPrefix ? window.MaxKB?.chatPrefix : '/chat') + '/api',
   withCredentials: false,
   timeout: 600000,
   headers: {},
